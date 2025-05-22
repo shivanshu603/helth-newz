@@ -111,15 +111,20 @@ class Config:
 
     # News sources configuration
     NEWS_SOURCES = [
-        "http://feeds.bbci.co.uk/news/rss.xml",
-        "https://www.theguardian.com/world/rss",
-        "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-        "https://feeds.npr.org/1001/rss.xml",
-        "https://www.aljazeera.com/xml/rss/all.xml",
-        "https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best",
-        "https://www.wired.com/feed/rss",
-        "https://techcrunch.com/feed/",
-        "https://www.theverge.com/rss/index.xml",
+        "https://scitechdaily.com/news/health/feed/",
+        "https://www.newscientist.com/feed/home/health",
+        "https://www.livemint.com/rss/news.xml",
+        "https://feeds.feedburner.com/ndtvnews-top-stories",
+        "https://feeds.feedburner.com/ndtvnews-latest",
+        "https://feeds.feedburner.com/ndtvnews-top-stories",
+        "https://feeds.everydayhealth.com/google-discover.xml",
+        "https://zeenews.india.com/rss.xml",
+        "https://indianexpress.com/feed",
+        "https://apnews.com/health.rss",
+        "https://www.nbcnews.com/feed",
+        "https://feeds-api.dotdashmeredith.com/v1/rss/google/0e5c1dc5-8100-49a0-8a57-625af7fbef05",
+        "https://kffhealthnews.org/feed",
+        "https://health.economictimes.indiatimes.com/rss/news.xml",
     ]
     
     # Content quality settings
