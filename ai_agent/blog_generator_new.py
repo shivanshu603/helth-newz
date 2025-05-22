@@ -630,6 +630,12 @@ class BlogGenerator:
         for pattern in patterns_to_remove:
             cleaned_text = re.sub(pattern, "", cleaned_text, flags=re.DOTALL)
         
+        # Fix formatting issues
+        cleaned_text = self._fix_formatting_issues(cleaned_text)
+        
+        # Remove repetitive sentences
+        cleaned_text = self._remove_repetitive_sentences(cleaned_text)
+        
         # Remove any duplicate headings that might appear
         lines = cleaned_text.split('\n')
         unique_lines = []
@@ -709,7 +715,268 @@ class BlogGenerator:
             else:
                 cleaned_lines.append(line)
         
-        return '\n'.join(cleaned_lines)
+        # Final pass to fix any remaining issues
+        result = '\n'.join(cleaned_lines)
+        result = self._fix_formatting_issues(result)  # Apply formatting fixes again
+        return result
+        
+    def _fix_formatting_issues(self, text: str) -> str:
+        """Fix common formatting issues in the generated text"""
+        # Fix double periods
+        text = re.sub(r'\.\.', '.', text)
+        
+        # Fix spacing after periods
+        text = re.sub(r'\.\s*\.', '.', text)
+        
+        # Fix incorrect spacing around periods
+        text = re.sub(r'\s+\.', '.', text)
+        
+        # Fix spacing after commas
+        text = re.sub(r',\s*,', ',', text)
+        
+        # Fix U.S. formatting (ensure proper spacing)
+        text = re.sub(r'U\.\s*S\.', 'U.S.', text)
+        
+        # Fix EU formatting
+        text = re.sub(r'E\.\s*U\.', 'EU', text)
+        
+        # Fix U.N. formatting
+        text = re.sub(r'U\.\s*N\.', 'U.N.', text)
+        
+        # Fix U-turn formatting
+        text = re.sub(r'U-\s*turn', 'U-turn', text)
+        
+        # Fix quotes
+        text = re.sub(r"'([^']*)'", r'"\1"', text)
+        
+        # Fix spacing around quotes
+        text = re.sub(r'"\s+', '"', text)
+        text = re.sub(r'\s+"', '"', text)
+        
+        # Fix multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Fix line breaks (ensure proper spacing between sentences)
+        lines = text.split('\n')
+        for i in range(len(lines)):
+            if lines[i].strip() and not lines[i].strip().startswith('#'):
+                lines[i] = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', lines[i])
+        
+        return '\n'.join(lines)
+        
+    def _remove_repetitive_sentences(self, text: str) -> str:
+        """Remove repetitive sentences from the generated text"""
+        # Split text into paragraphs
+        paragraphs = text.split('\n\n')
+        cleaned_paragraphs = []
+        
+        # Track sentences across all paragraphs to catch repetition between paragraphs
+        all_seen_sentences = set()
+        
+        for paragraph in paragraphs:
+            # Skip empty paragraphs
+            if not paragraph.strip():
+                cleaned_paragraphs.append(paragraph)
+                continue
+                
+            # Skip headings
+            if paragraph.strip().startswith('#'):
+                cleaned_paragraphs.append(paragraph)
+                continue
+                
+            # Split paragraph into sentences
+            sentences = re.split(r'(?<=[.!?])\s+', paragraph)
+            unique_sentences = []
+            
+            for sentence in sentences:
+                # Skip empty sentences
+                if not sentence.strip():
+                    continue
+                
+                # Fix common sentence issues
+                sentence = self._fix_sentence_issues(sentence)
+                
+                # Skip sentences that are too short after cleaning
+                if len(sentence.split()) < 3:
+                    unique_sentences.append(sentence)
+                    continue
+                    
+                # Normalize sentence for comparison (lowercase, remove punctuation)
+                normalized = re.sub(r'[^\w\s]', '', sentence.lower())
+                normalized = re.sub(r'\s+', ' ', normalized).strip()
+                
+                # Check for similar sentences across all paragraphs
+                is_similar = False
+                for seen in all_seen_sentences:
+                    # Check if sentences are very similar
+                    if (normalized in seen or seen in normalized or
+                        (len(normalized) > 10 and len(seen) > 10 and
+                         (normalized[:10] == seen[:10] or normalized[-10:] == seen[-10:]))):
+                        is_similar = True
+                        break
+                
+                if not is_similar:
+                    all_seen_sentences.add(normalized)
+                    unique_sentences.append(sentence)
+            
+            # Reconstruct paragraph with unique sentences
+            if unique_sentences:
+                cleaned_paragraph = ' '.join(unique_sentences)
+                cleaned_paragraphs.append(cleaned_paragraph)
+        
+        return '\n\n'.join(cleaned_paragraphs)
+        
+    def _fix_sentence_issues(self, sentence: str) -> str:
+        """Fix common issues in individual sentences"""
+        # Fix sentences that end with prepositions or conjunctions
+        sentence = re.sub(r'\s+(of|in|on|by|for|with|to|and|or|but)\s*\.$', '.', sentence)
+        
+        # Fix sentences that start with conjunctions and are very short
+        if re.match(r'^(And|But|Or|So)\s+.{1,20}$', sentence):
+            sentence = sentence[4:].strip().capitalize()
+        
+        # Fix sentences with repeated words
+        words = sentence.split()
+        if len(words) > 3:
+            for i in range(len(words) - 2):
+                if words[i].lower() == words[i+1].lower() and words[i].lower() not in ['the', 'a', 'an']:
+                    words[i+1] = ''
+            sentence = ' '.join([w for w in words if w])
+        
+        # Fix sentences with repeated phrases
+        for phrase_len in range(2, 5):  # Check for phrases of length 2-4 words
+            if len(words) > phrase_len * 2:
+                for i in range(len(words) - phrase_len * 2 + 1):
+                    phrase1 = ' '.join(words[i:i+phrase_len]).lower()
+                    phrase2 = ' '.join(words[i+phrase_len:i+phrase_len*2]).lower()
+                    if phrase1 == phrase2:
+                        # Remove the second occurrence
+                        for j in range(phrase_len):
+                            words[i+phrase_len+j] = ''
+                sentence = ' '.join([w for w in words if w])
+                words = sentence.split()  # Update words after modification
+        
+        # Fix sentences with "has been" repetition
+        sentence = re.sub(r'has been\s+([a-z]+)\s+has been', r'has been \1', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "the EU" repetition
+        sentence = re.sub(r'the EU\s+.*?\s+the EU', r'the EU', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "the US" repetition
+        sentence = re.sub(r'the US\s+.*?\s+the US', r'the US', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "Russia" repetition
+        sentence = re.sub(r'Russia\s+.*?\s+Russia', r'Russia', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "sanctions" repetition
+        sentence = re.sub(r'sanctions\s+.*?\s+sanctions', r'sanctions', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "massive" repetition
+        sentence = re.sub(r'massive\s*,\s*massive', r'massive', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "the most powerful" repetition
+        sentence = re.sub(r'the most powerful\s+.*?\s+the most powerful', r'the most powerful', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been accused" repetition
+        sentence = re.sub(r'has been accused\s+.*?\s+has been accused', r'has been accused', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been criticized" repetition
+        sentence = re.sub(r'has been criticized\s+.*?\s+has been criticized', r'has been criticized', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been blamed" repetition
+        sentence = re.sub(r'has been blamed\s+.*?\s+has been blamed', r'has been blamed', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been described" repetition
+        sentence = re.sub(r'has been described\s+.*?\s+has been described', r'has been described', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been called" repetition
+        sentence = re.sub(r'has been called\s+.*?\s+has been called', r'has been called', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been said" repetition
+        sentence = re.sub(r'has been said\s+.*?\s+has been said', r'has been said', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has been" repetition
+        sentence = re.sub(r'has been\s+.*?\s+has been', r'has been', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "has led" repetition
+        sentence = re.sub(r'has led\s+.*?\s+has led', r'has led', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "is not" repetition
+        sentence = re.sub(r'is not\s+.*?\s+is not', r'is not', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "is a" repetition
+        sentence = re.sub(r'is a\s+.*?\s+is a', r'is a', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "is the" repetition
+        sentence = re.sub(r'is the\s+.*?\s+is the', r'is the', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "is an" repetition
+        sentence = re.sub(r'is an\s+.*?\s+is an', r'is an', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "is" repetition
+        sentence = re.sub(r'is\s+.*?\s+is', r'is', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "are" repetition
+        sentence = re.sub(r'are\s+.*?\s+are', r'are', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "have been" repetition
+        sentence = re.sub(r'have been\s+.*?\s+have been', r'have been', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "have" repetition
+        sentence = re.sub(r'have\s+.*?\s+have', r'have', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "was" repetition
+        sentence = re.sub(r'was\s+.*?\s+was', r'was', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "were" repetition
+        sentence = re.sub(r'were\s+.*?\s+were', r'were', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "will" repetition
+        sentence = re.sub(r'will\s+.*?\s+will', r'will', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "would" repetition
+        sentence = re.sub(r'would\s+.*?\s+would', r'would', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "could" repetition
+        sentence = re.sub(r'could\s+.*?\s+could', r'could', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "should" repetition
+        sentence = re.sub(r'should\s+.*?\s+should', r'should', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "must" repetition
+        sentence = re.sub(r'must\s+.*?\s+must', r'must', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "can" repetition
+        sentence = re.sub(r'can\s+.*?\s+can', r'can', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "may" repetition
+        sentence = re.sub(r'may\s+.*?\s+may', r'may', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "might" repetition
+        sentence = re.sub(r'might\s+.*?\s+might', r'might', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "shall" repetition
+        sentence = re.sub(r'shall\s+.*?\s+shall', r'shall', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "should" repetition
+        sentence = re.sub(r'should\s+.*?\s+should', r'should', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "ought" repetition
+        sentence = re.sub(r'ought\s+.*?\s+ought', r'ought', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "need" repetition
+        sentence = re.sub(r'need\s+.*?\s+need', r'need', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "dare" repetition
+        sentence = re.sub(r'dare\s+.*?\s+dare', r'dare', sentence, flags=re.IGNORECASE)
+        
+        # Fix sentences with "used to" repetition
+        sentence = re.sub(r'used to\s+.*?\s+used to', r'used to', sentence, flags=re.IGNORECASE)
+        
+        # Fix multiple spaces
+        sentence = re.sub(r'\s+', ' ', sentence).strip()
+        
+        return sentence
 
     async def _prepare_prompt(self, topic: str) -> str:
         """
@@ -1103,8 +1370,12 @@ Please write a comprehensive article using these exact headings, and do not incl
         # Check if the article already has proper headings
         has_headings = re.search(r'^#+\s+', article_text, re.MULTILINE) is not None
         
-        # If the article already has headings, just return it after cleaning
+        # If the article already has headings, clean it one more time and return
         if has_headings:
+            # Ensure no duplicate headings
+            article_text = self._deduplicate_headings(article_text)
+            # Highlight keywords in the text
+            article_text = self._highlight_keywords_in_text(article_text, keyword_data)
             return article_text
             
         # If no headings, format with keywords
@@ -1112,6 +1383,7 @@ Please write a comprehensive article using these exact headings, and do not incl
             return article_text
 
         # Extract keywords
+        primary = keyword_data.get('primary_keywords') or keyword_data.get('primary') or []
         secondary = keyword_data.get('secondary_keywords') or keyword_data.get('secondary') or []
         semantic_groups = keyword_data.get('semantic_groups') or {}
         long_tail = keyword_data.get('long_tail') or []
@@ -1126,6 +1398,10 @@ Please write a comprehensive article using these exact headings, and do not incl
         
         # Add title and introduction
         title = paragraphs[0].split('.')[0] if paragraphs else "Article"
+        # Ensure title is not too long
+        if len(title.split()) > 10:
+            title = ' '.join(title.split()[:10])
+        
         formatted_sections.extend([
             f"# {title}",
             "",  # Empty line after heading
@@ -1136,22 +1412,40 @@ Please write a comprehensive article using these exact headings, and do not incl
         remaining_paragraphs = paragraphs[1:] if len(paragraphs) > 1 else []
         current_idx = 0
         
-        # Add main sections with secondary keywords
-        for i, keyword in enumerate(secondary[:3]):  # Use first 3 secondary keywords for main sections
+        # Define standard section headings if we don't have enough keywords
+        standard_sections = [
+            "Background and Context",
+            "Current Developments",
+            "Key Challenges",
+            "Analysis and Insights",
+            "Future Outlook",
+            "Practical Applications"
+        ]
+        
+        # Combine secondary keywords with standard sections
+        section_headings = []
+        for i in range(min(6, max(len(secondary), len(standard_sections)))):
+            if i < len(secondary):
+                section_headings.append(secondary[i].title())
+            else:
+                section_headings.append(standard_sections[i])
+        
+        # Add main sections
+        for i, heading in enumerate(section_headings[:3]):  # Use first 3 for main sections
             if current_idx < len(remaining_paragraphs):
                 formatted_sections.extend([
-                    f"## {keyword.title()}",
+                    f"## {heading}",
                     "",  # Empty line after heading
                     remaining_paragraphs[current_idx],
                     ""  # Empty line after section
                 ])
                 current_idx += 1
         
-        # Add subsections with more secondary keywords
-        for i, keyword in enumerate(secondary[3:6]):  # Use next 3 secondary keywords
+        # Add subsections
+        for i, heading in enumerate(section_headings[3:6]):  # Use next 3 for subsections
             if current_idx < len(remaining_paragraphs):
                 formatted_sections.extend([
-                    f"### {keyword.title()}",
+                    f"### {heading}",
                     "",  # Empty line after heading
                     remaining_paragraphs[current_idx],
                     ""  # Empty line after section
@@ -1182,7 +1476,7 @@ Please write a comprehensive article using these exact headings, and do not incl
                         current_idx += 1
         
         # Add FAQ section
-        if questions:
+        if questions and current_idx < len(remaining_paragraphs):
             formatted_sections.extend([
                 "## Frequently Asked Questions",
                 ""  # Empty line after heading
@@ -1227,7 +1521,156 @@ Please write a comprehensive article using these exact headings, and do not incl
         # Clean the formatted article one more time to remove any remaining artifacts
         formatted_article = self._clean_generated_text(formatted_article, "")
         
+        # Final deduplication of headings
+        formatted_article = self._deduplicate_headings(formatted_article)
+        
+        # Highlight keywords in the text
+        formatted_article = self._highlight_keywords_in_text(formatted_article, keyword_data)
+        
         return formatted_article
+        
+    def _highlight_keywords_in_text(self, article_text: str, keyword_data: Dict) -> str:
+        """
+        Highlight keywords in the article text using H5 and H6 tags
+        H5 tags are used for primary keywords
+        H6 tags are used for secondary keywords
+        """
+        if not keyword_data:
+            return article_text
+            
+        # Extract keywords
+        primary = keyword_data.get('primary_keywords') or keyword_data.get('primary') or []
+        secondary = keyword_data.get('secondary_keywords') or keyword_data.get('secondary') or []
+        long_tail = keyword_data.get('long_tail') or []
+        
+        # Split text into lines
+        lines = article_text.split('\n')
+        highlighted_lines = []
+        
+        for line in lines:
+            # Skip lines that are already headings
+            if line.strip().startswith('#'):
+                highlighted_lines.append(line)
+                continue
+                
+            # Skip empty lines
+            if not line.strip():
+                highlighted_lines.append(line)
+                continue
+                
+            # Highlight primary keywords with H5 tags
+            for keyword in primary:
+                if not keyword or len(keyword) < 4:  # Skip very short keywords
+                    continue
+                    
+                # Use word boundaries to match whole words only
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                # Ignore case for matching
+                matches = re.finditer(pattern, line, re.IGNORECASE)
+                
+                # Keep track of replacements to avoid overlapping
+                replacements = []
+                
+                for match in matches:
+                    start, end = match.span()
+                    # Check if this match overlaps with any previous replacement
+                    overlaps = False
+                    for r_start, r_end in replacements:
+                        if start < r_end and end > r_start:
+                            overlaps = True
+                            break
+                            
+                    if not overlaps:
+                        replacements.append((start, end))
+                        
+                # Apply replacements in reverse order to maintain indices
+                for start, end in sorted(replacements, reverse=True):
+                    original_text = line[start:end]
+                    line = line[:start] + f"##### {original_text} #####" + line[end:]
+            
+            # Highlight secondary keywords with H6 tags
+            for keyword in secondary + long_tail:
+                if not keyword or len(keyword) < 4:  # Skip very short keywords
+                    continue
+                    
+                # Use word boundaries to match whole words only
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                # Ignore case for matching
+                matches = re.finditer(pattern, line, re.IGNORECASE)
+                
+                # Keep track of replacements to avoid overlapping
+                replacements = []
+                
+                for match in matches:
+                    start, end = match.span()
+                    # Check if this match overlaps with any previous replacement
+                    overlaps = False
+                    for r_start, r_end in replacements:
+                        if start < r_end and end > r_start:
+                            overlaps = True
+                            break
+                            
+                    if not overlaps and "####" not in line[start:end]:  # Avoid highlighting already highlighted text
+                        replacements.append((start, end))
+                        
+                # Apply replacements in reverse order to maintain indices
+                for start, end in sorted(replacements, reverse=True):
+                    original_text = line[start:end]
+                    line = line[:start] + f"###### {original_text} ######" + line[end:]
+            
+            highlighted_lines.append(line)
+        
+        return '\n'.join(highlighted_lines)
+        
+    def _deduplicate_headings(self, article_text: str) -> str:
+        """Remove duplicate or very similar headings from the article"""
+        lines = article_text.split('\n')
+        result_lines = []
+        seen_headings = {}  # Track heading text without markdown symbols
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # Check if this is a heading
+            if line.startswith('#'):
+                heading_match = re.match(r'^(#+)\s*(.*?)$', line)
+                if heading_match:
+                    hashes = heading_match.group(1)
+                    heading_text = heading_match.group(2).strip().lower()
+                    
+                    # Skip empty headings
+                    if not heading_text:
+                        i += 1
+                        continue
+                    
+                    # Check for duplicate or very similar headings
+                    is_duplicate = False
+                    for seen_heading in seen_headings:
+                        # Check if this heading is very similar to an existing one
+                        if (heading_text in seen_heading or seen_heading in heading_text or 
+                            (len(heading_text) > 5 and len(seen_heading) > 5 and 
+                             (heading_text[:5] == seen_heading[:5] or heading_text[-5:] == seen_heading[-5:]))):
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        seen_headings[heading_text] = line
+                        result_lines.append(line)
+                    else:
+                        # Skip this heading and any content until the next heading
+                        i += 1
+                        while i < len(lines) and not lines[i].strip().startswith('#'):
+                            i += 1
+                        continue
+                else:
+                    result_lines.append(line)
+            else:
+                result_lines.append(line)
+            
+            i += 1
+        
+        return '\n'.join(result_lines)
         
 async def main():
     try:
